@@ -1,0 +1,78 @@
+name: Manabu bauen
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  iphone:
+    name: iPhone (Web-App)
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: ZIP entpacken
+        run: |
+          unzip -q -o "$(ls *.zip | head -1)" -d build
+          echo "APP=$(dirname "$(ls build/*/package.json | head -1)")" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Web-App vorbereiten
+        env:
+          BUILD_ID: ${{ github.run_number }}
+        run: |
+          cd "$APP"
+          npm install --no-audit --no-fund
+          npm run prepare:web
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ env.APP }}/www
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+  android:
+    name: Android (APK)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ZIP entpacken
+        run: |
+          unzip -q -o "$(ls *.zip | head -1)" -d build
+          echo "APP=$(dirname "$(ls build/*/package.json | head -1)")" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - name: APK bauen
+        env:
+          BUILD_ID: ${{ github.run_number }}
+          VERSION_CODE: ${{ github.run_number }}
+          VERSION_NAME: 1.0.${{ github.run_number }}
+        run: |
+          cd "$APP"
+          npm install --no-audit --no-fund
+          npm run android:init
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/manabu.apk"
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Manabu 1.0.${{ github.run_number }}
+          files: manabu.apk
+          make_latest: true
